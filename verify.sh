@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 自检脚本：由脚本而不是 AI 判断四件事（mock 测试 / 密钥排除 / 重启恢复 / 前端构建）。
+# 自检脚本：由脚本而不是 AI 判断五件事（mock 测试 / 密钥排除 / 重启恢复 / 前端构建 / 文件齐全与位置）。
 # 每个产品一个文件夹：projects/<产品名>/。脚本进到这个文件夹里检查。
 # 用法：./verify.sh [产品名] [阶段目录名]     例：./verify.sh 我的第一个产品 阶段2-1   （提示"权限不够"时在前面加 bash）
 # projects/ 下只有一个产品时，产品名可以省略：./verify.sh 阶段2-1
@@ -27,7 +27,8 @@ LOG="$(mktemp)"
 log() { printf '%s\n' "$*" | tee -a "$LOG"; }
 sect() { log ""; log "================ $* ================"; }
 
-R1="未配置"; R2="未配置"; R3="未配置"; R4="N/A（本阶段无正式前端）"
+R1="未配置"; R2="未配置"; R3="未配置"; R4="N/A（本阶段无正式前端）"; R5=""
+NOCODE=0; case "$STAGE" in 阶段0|阶段1) NOCODE=1;; esac   # 无代码阶段：测试和重启检查不适用
 D1=""; D2=""; D3=""; D4=""
 
 log "verify.sh 自检  $(date '+%Y-%m-%d %H:%M:%S')  产品：${PRODUCT}（${ROOT}/${P}）"
@@ -35,7 +36,9 @@ cd "$P"
 
 # ---------- 1. mock 自动化测试 ----------
 sect "1. mock 自动化测试"
-if [ -d backend/tests ]; then
+if [ "$NOCODE" -eq 1 ]; then
+  R1="N/A（无代码阶段）"
+elif [ -d backend/tests ]; then
   PY="$ROOT/$P/backend/.venv/bin/python"; [ -x "$PY" ] || PY="$(command -v python3)"
   T="$(mktemp)"
   (cd backend && MODEL_API_KEY="" "$PY" -m pytest -q 2>&1) > "$T"; RC=$?
@@ -103,7 +106,9 @@ cd "$P"
 
 # ---------- 3. 重启恢复 ----------
 sect "3. 数据重启恢复（调用 scripts/restart-check.sh）"
-if [ -x scripts/restart-check.sh ]; then
+if [ "$NOCODE" -eq 1 ]; then
+  R3="N/A（无代码阶段）"
+elif [ -x scripts/restart-check.sh ]; then
   T="$(mktemp)"; bash scripts/restart-check.sh > "$T" 2>&1; RC=$?
   tee -a "$LOG" < "$T"; rm -f "$T"
   if [ "$RC" -eq 0 ]; then R3="通过"; else R3="不通过（退出码 ${RC}，见输出）"; fi
@@ -127,15 +132,65 @@ else
 fi
 log "结果：$R4"
 
+# ---------- 5. 文件齐全与位置 ----------
+sect "5. 文件齐全与位置（AGENTS.md 第 7 节的产出清单；根目录不放产品文件）"
+MISS=0; STRAY=0
+cd "$ROOT"
+# 5a. 根目录只放工具包自己的文件，产品的代码、依赖、数据都应在 projects/<产品名>/ 里
+for e in * .[!.]*; do
+  [ -e "$e" ] || continue
+  case "$e" in
+    AGENTS.md|CLAUDE.md|README.md|开始看这里.md|LICENSE|verify.sh|.gitignore|assets|docs|projects|.git|.DS_Store) ;;
+    scripts) for f in scripts/*; do [ "$f" = scripts/export-clean-kit.sh ] || { log "放错位置：${f}（应在产品文件夹里）"; STRAY=$((STRAY+1)); }; done ;;
+    .venv|.env|.env.*|.next|.vefaas|.pytest_cache) log "放错位置：${e}（应在产品文件夹里）"; STRAY=$((STRAY+1)) ;;
+    .*) ;;  # 其他隐藏文件夹多为编码工具自己的配置
+    *) log "放错位置：${e}（应在产品文件夹里）"; STRAY=$((STRAY+1)) ;;
+  esac
+done
+for e in docs/*; do
+  case "$e" in docs/手册|docs/PRD模板.md) ;; *) log "放错位置：${e}（产品文档应在 ${P}/docs/ 里）"; STRAY=$((STRAY+1)) ;; esac
+done
+[ "$STRAY" -eq 0 ] && log "通过：根目录没有放错位置的文件。"
+cd "$P"
+# 5b. 本阶段必须产出的文件
+NEED=(); EVI=0
+case "$STAGE" in
+  "") ;;
+  阶段0) NEED=(docs/阶段文档/阶段0-PRD补全清单.md "docs/evidence/$STAGE/是否表.md") ;;
+  阶段1) NEED=(docs/阶段文档/技术适配声明.md "docs/evidence/$STAGE/是否表.md") ;;
+  阶段2*) NEED=("docs/阶段文档/${STAGE}技术开发文档.md"); EVI=1 ;;
+  阶段3-0) NEED=(docs/阶段文档/前端适配声明.md "docs/evidence/$STAGE/是否表.md") ;;
+  阶段3*) NEED=(docs/阶段文档/前端适配声明.md "docs/阶段文档/${STAGE}技术开发文档.md"); EVI=1 ;;
+  阶段4) NEED=(docs/阶段文档/上线方案摘要.md); EVI=1 ;;
+  阶段5) ;;
+  *) log "问题：不认识的阶段名 ${STAGE}（应为 阶段0、阶段1、阶段2-1、阶段3-0、阶段3-1、阶段4、阶段5 这类）。"; MISS=$((MISS+1)) ;;
+esac
+if [ -n "$STAGE" ]; then
+  NEED+=(docs/项目状态.md)
+  [ "$EVI" -eq 1 ] && NEED+=(README.md "docs/evidence/$STAGE/照着做清单.md" "docs/evidence/$STAGE/是否表.md")
+  for f in ${NEED[@]+"${NEED[@]}"}; do
+    if [ -s "$f" ]; then log "有：$f"; else log "缺：$f"; MISS=$((MISS+1)); fi
+  done
+  if [ "$EVI" -eq 1 ]; then
+    SHOTS="$(ls "docs/evidence/$STAGE" 2>/dev/null | grep -icE '\.(png|jpe?g)$')"
+    if [ "$SHOTS" -gt 0 ]; then log "有：docs/evidence/$STAGE/ 下 $SHOTS 张截图"; else log "缺：docs/evidence/$STAGE/ 下至少一张截图（.png / .jpg）"; MISS=$((MISS+1)); fi
+  fi
+fi
+if [ "$MISS" -gt 0 ] || [ "$STRAY" -gt 0 ]; then R5="不通过（缺 ${MISS} 个文件，${STRAY} 处放错位置）"
+elif [ -z "$STAGE" ]; then R5="通过（只查了文件位置；给阶段名才查文件齐全）"
+else R5="通过"; fi
+log "结果：$R5"
+
 # ---------- 汇总 ----------
-sect "汇总（抄进是否表的就是这四行）"
+sect "汇总（抄进是否表的就是这五行）"
 log "是否表第 2 项  mock 测试：      $R1"
 log "是否表第 4 项  前端检查与构建： $R4"
 log "是否表第 5 项  密钥排除：       $R2"
 log "是否表第 6 项  重启后数据恢复： $R3"
+log "是否表第 10 项 文件齐全与位置： $R5"
 EXIT=0
-for r in "$R1" "$R2" "$R3" "$R4"; do case "$r" in 不通过*|未配置*) EXIT=1;; esac; done
-if [ "$EXIT" -eq 0 ]; then log "总判定：四项全部通过或不适用。"; else log "总判定：有不通过或未配置项，对应是否表只能填\"否\"。"; fi
+for r in "$R1" "$R2" "$R3" "$R4" "$R5"; do case "$r" in 不通过*|未配置*) EXIT=1;; esac; done
+if [ "$EXIT" -eq 0 ]; then log "总判定：五项全部通过或不适用。"; else log "总判定：有不通过或未配置项，对应是否表只能填\"否\"。"; fi
 
 if [ -n "$STAGE" ]; then
   mkdir -p "docs/evidence/$STAGE"
