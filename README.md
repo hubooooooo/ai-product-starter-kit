@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="assets/logo.png" alt="AI 产品开箱工具包" width="320">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.png">
+  <img src="assets/logo.png" alt="AI 产品开箱工具包" width="180">
+</picture>
 
 # AI 产品从想法到上线 · 开箱工具包
 
@@ -26,7 +29,7 @@
 
 你用编码 AI 工具打开它，贴一句启动句。AI 就按规则卡扮演你的技术合伙人：先帮你把需求问清楚，再按阶段写代码、做界面、部署上线，每个阶段交证据给你核对。你只做业务判断和少数必须本人做的事（申请 Key、实名认证、确认花钱）。
 
-| 你的处境 | 这个工具包给什么 |
+| 你的处境<img src="assets/spacer.png" width="3500" height="0" align="right"> | 这个工具包给什么<img src="assets/spacer.png" width="6500" height="0" align="right"> |
 | --- | --- |
 | 有产品想法，但不会写代码 | AI 写全部代码，你只做业务判断 |
 | 网上教程太技术、太碎片 | 三份技术手册，AI 按阶段自己读，你不用看 |
@@ -59,7 +62,7 @@
 
 它和网页版聊天 AI 的区别是：能在你电脑上装东西、跑程序、改文件。网页版 AI 做不到，不能用。推荐三个，选一个就行：
 
-| 工具 | 说明 |
+| 工具<img src="assets/spacer.png" width="2500" height="0" align="right"> | 说明<img src="assets/spacer.png" width="7500" height="0" align="right"> |
 | --- | --- |
 | [Claude Code](https://claude.com/claude-code) | 这套工具包在它上面走过完整的开发流程，最稳 |
 | [Codex](https://openai.com/codex/) | 会自动读规则卡 `AGENTS.md` |
@@ -83,7 +86,7 @@
 
 ## 🧭 六个阶段：AI 做什么，你做什么
 
-| 阶段 | AI 做什么 | 你要做的 | 大概花你多久 |
+| 阶段<img src="assets/spacer.png" width="1400" height="0" align="right"> | AI 做什么<img src="assets/spacer.png" width="3200" height="0" align="right"> | 你要做的<img src="assets/spacer.png" width="3800" height="0" align="right"> | 大概花你多久<img src="assets/spacer.png" width="1600" height="0" align="right"> |
 | --- | --- | --- | --- |
 | 0 PRD 体检 | 检查需求缺什么，一次最多问 5 个问题，每个附推荐答案 | 回答，或直接回"按推荐" | 半小时 |
 | 1 技术适配 | 出一份《技术适配声明》 | 确认它理解得对不对、有没有多出花钱项 | 10 分钟 |
