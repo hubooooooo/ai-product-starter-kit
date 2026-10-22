@@ -1,6 +1,6 @@
-# AI Agent 产品 Vibe Coding 通用前端技术栈手册 V1.1
+# AI Agent 产品 Vibe Coding 通用前端技术栈手册 V1.2
 
-> 文档版本：V1.1（2026-10-22）。相比 V1.0：与 `AGENTS.md` 对齐（阶段 2 界面类型承接、证据包四样与 `verify.sh`、是否表十项内的问题不可带着交付）；删除与通用手册重复的流程、固定指令、常见错误和总结节；去掉特定项目的专属细节；补本地 HTTPS 真机验收、SSE 收尾映射、Next.js 新版 lint 与国内字体构建注意事项。
+> 文档版本：V1.2（2026-10-22）。相比 V1.1：前后端同源改为 `proxy.ts` 运行时转发并携带访问者真实 IP（经腾讯云开发实测），不再用构建时 rewrites。V1.1：相比 V1.0：与 `AGENTS.md` 对齐（阶段 2 界面类型承接、证据包四样与 `verify.sh`、是否表十项内的问题不可带着交付）；删除与通用手册重复的流程、固定指令、常见错误和总结节；去掉特定项目的专属细节；补本地 HTTPS 真机验收、SSE 收尾映射、Next.js 新版 lint 与国内字体构建注意事项。
 > 读者：本手册由 AI 在阶段 3（正式前端）读取全文；产品经理相关内容由 AI 在对应时点转述，产品经理不需要阅读本手册。
 > 默认范围：Web 端 AI Agent 产品的 MVP；兼顾已有项目迭代。
 > 与项目根目录 `AGENTS.md` 冲突时以 `AGENTS.md` 为准；AI 发现冲突必须当场向产品经理指出。
@@ -246,7 +246,7 @@ Tailwind CSS 4 起，写在 `@theme` 里的变量会生成对应工具类（如 
 frontend/
 ├── app/                       # 路由、页面、布局、错误页
 │   ├── (workspace)/
-│   ├── bff/                   # 仅当需要 BFF 逻辑时创建；不要占用被 rewrites 代理的 /api/* 路径
+│   ├── bff/                   # 仅当需要 BFF 逻辑时创建；不要占用被代理转发的 /api/* 路径
 │   ├── error.tsx
 │   ├── loading.tsx
 │   └── layout.tsx
@@ -614,9 +614,10 @@ type AppError = {
 - 前端环境只保存公开配置；
 - 开发、测试、生产环境地址通过配置管理；
 - 普通 API 与流式 API 的地址策略必须一致并经过部署验证；
-- 前后端同源的默认做法是用 `next.config` 的 `rewrites` 把 `/api/*` 代理到 `BACKEND_URL`，避免跨域；`app/` 下不再建同名的 `/api` 路由；
+- 前后端同源的默认做法：在 `proxy.ts`（Next 16 起替代 `middleware.ts`，运行在 Node.js 运行时）里把 `/api/*` 在**请求时**转发到 `process.env.BACKEND_URL`，原样带回状态码、响应体和每一条 Set-Cookie，避免跨域；`app/` 下不再建同名的 `/api` 路由。不用 `next.config` 的 `rewrites`：它的目标地址在构建时就固定了，换后端地址要重新构建；
+- 转发时由代理写入访问者真实 IP（`x-client-ip`，取自平台写入的来源头，腾讯云开发为 `x-envoy-external-address`，并覆盖客户端自带的同名头）和前后端共享密钥（`x-proxy-secret` = `PROXY_SHARED_SECRET`）；后端只在共享密钥正确时才信任 `x-client-ip`。否则后端看到的来源全是前端服务器，登录限流会把所有用户一起锁住；
 - 前端本地配置写在 `frontend/.env.local`，必须被 `.gitignore` 排除（根目录 `verify.sh` 会扫描这个文件里的值有没有泄露）；仓库只提交 `frontend/.env.example`；
-- `BACKEND_URL` 本地要有默认值 `http://localhost:8000`，否则 `npm run build`（`verify.sh` 第 4 项）会失败；线上值按部署手册在构建时注入。
+- `BACKEND_URL` 和 `PROXY_SHARED_SECRET` 都在运行时读取，没配时代理返回 503 统一错误，`npm run build` 不依赖它们；本地 `frontend/.env.local` 写 `BACKEND_URL=http://localhost:8000`，线上按部署手册写入云托管环境变量。
 
 ---
 
@@ -925,7 +926,7 @@ AI 在交付前必须真实启动前端和后端，并用脚本化浏览器完�
 
 ### 21.6 为上线做的准备
 
-阶段 3 结束前，把 `next.config` 设为 `output: "standalone"`，并把前端指向的后端地址做成构建时注入的环境变量 `BACKEND_URL`（本地默认 `http://localhost:8000`）。其余部署步骤（静态资源补齐、启动命令、同源代理、HTTPS）见上线部署手册中前端应用单独部署一节，阶段 4 再读。
+阶段 3 结束前，把 `next.config` 设为 `output: "standalone"`，准备好 `frontend/Dockerfile`（多阶段构建、拷贝 `.next/static` 与 `public`、非 root、`node server.js`、端口 3000），后端地址按 12.5 节在运行时读取。其余部署步骤（静态资源补齐、启动命令、同源代理、HTTPS）见上线部署手册中前端应用单独部署一节，阶段 4 再读。
 
 ---
 

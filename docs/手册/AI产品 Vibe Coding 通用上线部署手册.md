@@ -19,7 +19,9 @@
 
 - 适用：MVP 上线给小范围用户试用（几十人以内）；后端为 Python FastAPI 容器，前端为 Next.js（可选）。
 - 不在范围：自有域名与备案、对公众正式运营、高并发。
-- **待实测**（照做时如与实际不符，以控制台和 `tcb ... --help` 为准，并把差异记进 `docs/项目状态.md`）：前端 Next.js 单独部署到云托管；云存储（文件上传）；日志告警；免费额度的真实消耗速度。
+- **默认网址的提示页**：平台分配的是测试域名。浏览器第一次打开时，腾讯云会先显示"页面访问提示"（"测试域名，仅供开发测试使用……请勿泄露个人信息、账号密码"），等 3 秒点「确定访问」才进入产品；命令行请求看不到它。只有绑定已备案的自有域名才能去掉。AI 必须在发网址时提前告诉产品经理，并请他转告每位试用者"看到提示点确定访问，这不是出错"。
+- **待实测**（照做时如与实际不符，以控制台和 `tcb ... --help` 为准，并把差异记进 `docs/项目状态.md`）：云存储（文件上传）；日志告警；免费额度的真实消耗速度。
+- 参考代码：`docs/手册/参考代码/腾讯云开发/`，是本手册各步骤在演练产品里实测通过的实现，照着改，不要从零写。
 
 ---
 
@@ -97,7 +99,7 @@
 | 步骤 | 去哪 / 点什么 | 看到什么算对 |
 | --- | --- | --- |
 | 1 | 控制台左下角「环境管理」→「API Key 配置」→ 下方"服务端 API Key"区域的「创建 API Key」（不是上方的"客户端 Publishable Key"） | 弹出"创建 API Key"窗口 |
-| 2 | 名称填 `<产品名>-backend`；过期时间选 **180 天**（演练或临时测试选 30 天） | — |
+| 2 | 名称用英文小写，如 `myapp-backend`；过期时间选 **180 天**（演练或临时测试选 30 天） | — |
 | 3 | 点「创建」，复制弹出的密钥（通常只显示一次） | — |
 | 4 | 用"文本编辑"打开 AI 指定的本地文件（`backend/.env`，Finder 里按 Command + Shift + 句号显示隐藏文件），粘到 `CLOUDBASE_API_KEY=` 后面，保存 | 回对话只说"填好了" |
 
@@ -128,7 +130,11 @@ tcb login                    # 设备授权：输出一个授权链接和"用户
 - 认证：请求头 `Authorization: Bearer <服务端 API Key>`。实测：服务端 API Key 不受行级安全（RLS）限制；不带 Key 返回 401 `MISSING_CREDENTIALS`。
 - 网关报错形如 `{"code":"...","message":"...","requestId":"..."}`：后端日志只记 code 和 requestId，转换成产品统一错误结构后再返回，不把原文给用户。
 
-**对开发阶段的要求**（通用手册第九节）：数据读写集中在一个 repository 层。本地开发和 mock 测试用 SQLAlchemy + SQLite；上线时用环境变量 `DATA_BACKEND=cloudbase_rest` 切到网关实现，两种实现跑同一套接口测试。
+**对开发阶段的要求**（通用手册第九节）：数据读写集中在一个 repository 层。本地开发和 mock 测试用 SQLAlchemy + SQLite；上线时用环境变量 `DATA_BACKEND=cloudbase_rest` 切到网关实现，两种实现跑同一套接口测试（参考 `参考代码/腾讯云开发/backend/tests/conftest.py`：网关实现用内存里的假网关跑）。
+
+- `backend/.env` 里 **`DATA_BACKEND` 保持留空**：pytest 和重启检查也读这个文件，写成 `cloudbase_rest` 会让测试去连真实云库。本地连云库冒烟时只在那条命令前临时加 `DATA_BACKEND=cloudbase_rest`。
+- 本地冒烟会把记录写进线上数据库：冒烟用的邀请码标签统一以 `smoke-` 开头，冒烟结束后删掉：`tcb db execute -e <环境ID> --sql "DELETE FROM <业务表> WHERE owner_id LIKE 'smoke-%'"`（表名、字段按产品改）。
+- 在 Mac 上用 Python 访问本机服务返回 502 时，多半是系统代理在拦截：脚本里 httpx 加 `trust_env=False`，或设 `NO_PROXY=localhost,127.0.0.1`。
 
 **建表**（AI 用命令行执行，不需要产品经理去控制台）：
 
@@ -137,7 +143,7 @@ tcb db execute -e <环境ID> --sql "SELECT 1"                                   
 tcb db execute -e <环境ID> --sql "$(grep -v '^--' backend/migrations/001_init.sql)"
 ```
 
-迁移文件要求：`CREATE TABLE IF NOT EXISTS`，可重复执行；每张业务表 `ENABLE ROW LEVEL SECURITY` 且**不建任何策略**，这样浏览器端的 Publishable Key 读不到任何数据，后端的服务端 Key 不受影响。上线后用 `SELECT relname, relrowsecurity FROM pg_class ...` 复查每张表都已开启。
+迁移文件要求：`CREATE TABLE IF NOT EXISTS`，可重复执行；每张业务表 `ENABLE ROW LEVEL SECURITY` 且**不建任何策略**，这样浏览器端的 Publishable Key 读不到任何数据，后端的服务端 Key 不受影响。上线后复查每张表都已开启：`tcb db execute -e <环境ID> --sql "SELECT c.relname, c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r'"`，每行第二列都应为 `true`。
 
 ## 七、打包
 
@@ -177,9 +183,10 @@ tcb cloudrun deploy -e <环境ID> -s <服务名> --source . --port 8080 \
 | `Port` | `IntValue` | `8080` |
 
   写成 `EnvParams`、`Cpu`、`Mem` 会被静默忽略，新版本照样启动失败。CLI 默认规格是 1 核 / 2 GB，会更快耗光免费额度，必须改小。
-- **密钥不上命令行、不进对话**：用一段脚本从 `backend/.env` 读取密钥、现场生成邀请码和会话密钥（存进被忽略的 `backend/.env.invites`），拼好请求体后调用 `tcb api tcbr UpdateCloudRunServer --api-version 2022-02-17 --body ...`，输出里把所有密钥值替换成"已隐藏"再打印。
+- **密钥不上命令行、不进对话**：AI 先生成 `backend/.env.secrets`（邀请码、会话密钥、前后端共享密钥，已被 `.gitignore` 忽略），再用参考脚本 `docs/手册/参考代码/腾讯云开发/set_cloudrun_env.py` 写入：它从 `backend/.env` 和 `backend/.env.secrets` 读取指定变量、自动取该服务最新镜像、提交后等待发布结果，输出里所有值打码。示例见脚本开头注释。
 - 进度：`tcb api tcbr DescribeServerManageTask --api-version 2022-02-17 --body '{"EnvId","ServerName","TaskId":<返回的 TaskId>}'`，等到 `finished`；`failed` 时按第八节看运行日志。
 - 写入后用 `DescribeCloudRunServerDetail` 核对 `EnvParams` 里的**变量名**齐全、规格正确，只看键名不打印值。
+- **每次写入都是整组覆盖**：没列进去的变量会从线上消失。所以每次都按下面的清单把变量列全，不能只写要改的那一个。
 
 **环境变量清单**（键名以本项目代码为准）：
 
@@ -193,6 +200,7 @@ tcb cloudrun deploy -e <环境ID> -s <服务名> --source . --port 8080 \
 | `SESSION_SECRET` | AI 生成的随机长串 |
 | `COOKIE_SECURE` | `1` |
 | `DAILY_GENERATION_LIMIT` | 每人每天模型调用上限，按决策台账 D4 换算并经产品经理确认 |
+| `PROXY_SHARED_SECRET` | 有正式前端时：AI 生成的随机长串，前后端两个服务配同一个值（见第十节前端部分） |
 
 ## 十、更新版本（已上线后再发布）
 
@@ -205,11 +213,30 @@ tcb --yes cloudrun deploy -e <环境ID> -s <服务名> --source . --port 8080 \
 
 - 必须带全局参数 `--yes`：服务已存在时 CLI 会问"是否灰度发布"，不带 `--yes` 在后台运行会卡住退出；`--yes` 选默认项"不灰度，发布成功后自动切换"。
 - 重新部署**保留**之前写入的环境变量和规格（实测）。要改环境变量时再按第九节用接口写。
+- 上传代码包偶尔报 `socket hang up`，是网络抖动，重试即可。
 - 发布后按第十一节从外网验证，不通过就回滚：`tcb cloudrun traffic --help` 查看切回旧版本的方法。
 
-### 前端（Next.js）单独部署（待实测）
+### 只上线后端、没有正式前端时
 
-有正式前端时，前端作为第二个云托管服务部署，用 `output: "standalone"`、`node server.js`、端口 3000，通过 `rewrites` 同源代理 `/api/*` 到后端服务地址（构建时注入 `BACKEND_URL`）。字体用 `next/font/local`。照做时把实际命令和问题补进本节。
+产品经理决定先用阶段 2 的临时验收页上线时（需在决策台账记录），验收页要补上邀请码登录框和 `<meta name="viewport">`，否则手机上没法用。正式前端做好后按下一小节部署，临时页随之废弃。
+
+### 前端（Next.js）单独部署（2026-10-22 实测）
+
+有正式前端时，前端是**第二个云托管服务**。用户只访问前端地址；前端在服务端把 `/api/*` 转发给后端，浏览器与后端之间没有跨域，登录 Cookie 落在前端地址下。
+
+1. **代码**（前端手册 12.5、21.6 节）：`proxy.ts` 在请求时读取 `BACKEND_URL` 转发 `/api/*`，带回状态码、响应体和每一条 Set-Cookie；转发时写入 `x-client-ip`（取前端收到的 `x-envoy-external-address`，覆盖客户端自带的同名头）和 `x-proxy-secret`（= `PROXY_SHARED_SECRET`）。后端只在 `x-proxy-secret` 正确时信任 `x-client-ip`，否则仍用自己收到的 `x-envoy-external-address`。不做这一步，后端看到的来源全是前端服务器，登录限流会把所有用户一起锁住。
+2. **打包**：`frontend/Dockerfile` 多阶段构建（`node:22-slim`，`npm ci` → `npm run build` → 拷贝 `.next/standalone`、`.next/static`、`public`），非 root 运行，`HOSTNAME=0.0.0.0`、`PORT=3000`，`CMD ["node","server.js"]`；`.dockerignore` 排除 `node_modules`、`.next`、`.env*`、`tests`。字体用系统字体或 `next/font/local`。
+3. **部署**：先部署后端（第八、九节），再部署前端。前端不依赖必填环境变量，首次部署就能启动成功：
+
+```bash
+cd projects/<产品名>/frontend
+tcb --yes cloudrun deploy -e <环境ID> -s <产品名>-web --source . --port 3000 \
+  --min-num 0 --max-num 1 --open-access-types PUBLIC --force --wait
+```
+
+4. **写入前端配置**（第九节同一个脚本）：`BACKEND_URL` = 后端服务的 `DefaultDomainName`；`PROXY_SHARED_SECRET` 与后端相同（两边都从 `backend/.env.secrets` 读同一个值）。
+5. **验证**：经前端地址跑外网冒烟（登录、生成、历史、隔离）；经前端连续输错触发 429，带伪造的 `x-client-ip`、`x-envoy-external-address`、`X-Forwarded-For` 仍是 429；同一台电脑绕开前端直连后端也是 429（说明前端带过去的是真实 IP）；**换一个网络**（如手机关掉 Wi-Fi 用 5G）仍能正常登录（说明没有把所有人一起锁住）。
+6. 对外公布的是前端地址；后端地址只用于排错。第一次打开时前后端都要冷启动，可能等 5～10 秒。
 
 ---
 
@@ -234,6 +261,7 @@ tcb --yes cloudrun deploy -e <环境ID> -s <服务名> --source . --port 8080 \
 - **不得打印、记录或返回完整请求头**。云托管会在每个请求里注入 `x-cloudbase-context`，其中含平台签发的临时凭证（含管理员权限的访问令牌，有效期约 5 天）。2026-10-22 演练中，一个"返回全部请求头"的临时排查接口把它暴露了约 7 分钟。排查只取需要的单个请求头，排查代码随用随删。
 - 日志只记元信息（请求 ID、耗时、错误码），不记密钥、密码、完整用户文档。
 - 服务端 API Key、模型 Key 只在 `backend/.env`（本地）和云托管环境变量（线上）。
+- CLI 报错时可能把带临时签名（`q-ak` 等参数）的上传地址整段打出来：不要把 CLI 的原始报错贴进对话、文档或证据包，只摘错误类型和 requestId。
 
 ## 十三、文件存储（待实测）
 
@@ -260,6 +288,10 @@ tcb --yes cloudrun deploy -e <环境ID> -s <服务名> --source . --port 8080 \
 | 输错锁定可被伪造地址绕过 | 用了 `X-Forwarded-For` 取来源 IP | 改用 `x-envoy-external-address`（第十一节） |
 | 网关 401 `MISSING_CREDENTIALS` | 没带或带错服务端 API Key | 检查 `CLOUDBASE_API_KEY`；Key 过期就新建 |
 | 第一次打开要等 5～10 秒 | 实例数最小为 0，冷启动 | 正常；需要秒开再评估最小实例数 1（持续消耗资源点） |
+| 浏览器先出现"页面访问提示"，HTTP 状态 404 | 平台对测试域名加的提醒页 | 等 3 秒点「确定访问」；只有绑定已备案的自有域名能去掉 |
+| 上传代码包报 `socket hang up` | 网络抖动 | 重试部署命令 |
+| Mac 上 Python 访问本机服务返回 502 | 系统代理拦截了本机地址 | httpx 加 `trust_env=False`，或设 `NO_PROXY=localhost,127.0.0.1` |
+| pytest 意外去连真实云库 | `backend/.env` 里写了 `DATA_BACKEND=cloudbase_rest` | 改回留空，只在冒烟命令前临时设置 |
 | 免费额度用完，服务停了 | 3000 点/月耗尽 | 等下月重置，或经产品经理确认升级个人版 |
 
 ---
@@ -293,11 +325,13 @@ tcb --yes cloudrun deploy -e <环境ID> -s <服务名> --source . --port 8080 \
 - [ ] 首次 `tcb cloudrun deploy`（预期启动失败）
 - [ ] `UpdateCloudRunServer` 写入环境变量与 0.25 核 / 0.5 GB / 0～1 实例，等任务 `finished`
 - [ ] `/api/health` 外网返回正常
+- [ ] 有正式前端时：部署前端服务、写入 `BACKEND_URL` 与 `PROXY_SHARED_SECRET`（第十节前端部分）
 
 ## 上线后验证
-- [ ] 外网冒烟：登录、真实生成、历史、隔离（第十一节）
+- [ ] 外网冒烟：登录、真实生成、历史、隔离（第十一节）；删除冒烟写入的 `smoke-` 记录
+- [ ] 再发布一次新版本（`tcb --yes cloudrun deploy ...`），确认登录和历史数据都还在（云端数据不随版本丢失）
 - [ ] 产品经理按第六部分验收（电脑 + 无痕窗口 + 手机）
-- [ ] 产品经理验收完成后再测登录限流与防伪造
+- [ ] 产品经理验收完成后再测登录限流与防伪造；有前端时加测"直连后端也被锁"和"换网络仍能登录"
 - [ ] 证据包放 `docs/evidence/阶段4/`，运行 `./verify.sh <产品名> 阶段4` 并填是否表
 
 ## 收尾（阶段 5）
@@ -315,5 +349,5 @@ tcb --yes cloudrun deploy -e <环境ID> -s <服务名> --source . --port 8080 \
 - [ ] 生成一次，几秒内出结果；刷新页面记录还在
 - [ ] 用另一个邀请码在无痕窗口登录：看不到第一个人的记录
 - [ ] 手机浏览器用同一个码登录：记录和电脑一致
-- [ ] AI 的证据包里有外网冒烟和限流防伪造的结果
-- [ ] AI 已退出本机命令行登录；线上服务仍正常
+- [ ] 第一次打开先看到腾讯云"页面访问提示"，点「确定访问」后进入产品（这是测试域名的提醒，不是出错）
+- [ ] AI 的证据包里有外网冒烟、限流防伪造、重新发布后数据仍在的结果

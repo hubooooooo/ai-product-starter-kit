@@ -85,7 +85,7 @@ for d in "$P/frontend/.next" "$P/frontend/dist" "$P/frontend/out" "$P/backend/di
   if [ -n "$M" ]; then log "问题：构建产物 $d 中发现疑似密钥，文件："; log "$M"; HITS=$((HITS+1)); else log "通过：构建产物 $d 未发现密钥样式字符串。"; fi
 done
 # 2d. 本机 .env 里的真实 Key 值不得出现在任何跟踪文件或构建产物里（值本身不打印）
-for envf in "$P/backend/.env" "$P/.env" "$P/frontend/.env.local" .env; do
+for envf in "$P/backend/.env" "$P/backend/.env.secrets" "$P/.env" "$P/frontend/.env.local" .env; do
   [ -f "$envf" ] || continue
   while IFS= read -r line; do
     case "$line" in \#*|"") continue;; esac
