@@ -6,16 +6,16 @@ Items 键名必须是 EnvParam / CpuSpecs / MemSpecs（写成 EnvParams / Cpu / 
 密钥只从本地文件读（--from-file，dotenv 格式），不出现在命令行和输出里；输出中的值一律打码。
 【注意】每次写入都是整组覆盖：没列进 --keys / --set 的变量会从线上消失。所以每次都把全部变量列全，不能只写要改的那一个。
 
-用法示例（后端，变量按产品增删）：
-  python set_cloudrun_env.py --env-id <环境ID> --service <产品>-backend --port 8080 \
-      --from-file backend/.env --from-file backend/.env.secrets \
+用法示例（在工具包根目录执行；服务名用产品英文短名，见部署手册第八节；变量按产品增删）：
+  python3 docs/手册/参考代码/腾讯云开发/set_cloudrun_env.py --env-id <环境ID> --service <短名>-api --port 8080 \
+      --from-file projects/<产品名>/backend/.env --from-file projects/<产品名>/backend/.env.secrets \
       --keys CLOUDBASE_API_KEY,MODEL_API_KEY,MODEL_BASE_URL,MODEL_NAME,INVITE_CODES,SESSION_SECRET,PROXY_SHARED_SECRET \
       --set DATA_BACKEND=cloudbase_rest --set CLOUDBASE_ENV_ID=<环境ID> --set REQUIRE_LOGIN=1 --set COOKIE_SECURE=1 \
       --set MODEL_TIMEOUT_SECONDS=30 --set DAILY_GENERATION_LIMIT=50
 
 用法示例（前端，有正式前端时）：
-  python set_cloudrun_env.py --env-id <环境ID> --service <产品>-web --port 3000 \
-      --from-file backend/.env.secrets --keys PROXY_SHARED_SECRET --set BACKEND_URL=<后端服务地址>
+  python3 docs/手册/参考代码/腾讯云开发/set_cloudrun_env.py --env-id <环境ID> --service <短名>-web --port 3000 \
+      --from-file projects/<产品名>/backend/.env.secrets --keys PROXY_SHARED_SECRET --set BACKEND_URL=<后端服务地址>
 """
 import argparse
 import json

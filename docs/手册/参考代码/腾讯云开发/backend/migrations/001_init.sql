@@ -5,6 +5,8 @@
 -- 结构与 app/models/user.py、app/models/generation.py 完全一致（与 SQLAlchemy create_all 生成的表相同）：
 --       表名、列名、类型、长度、可空性、主键、唯一约束、索引。改模型时必须同步新增 002_*.sql，不要改本文件。
 -- 时间戳和 schema_version 由应用写入（UTC）；id 由数据库自增（SERIAL）。
+-- 表名：演练环境里只有这一个产品，所以没加前缀。新产品照抄时改成 <英文短名>_users、<英文短名>_generations：
+--       同一个云开发环境会放多个产品、共用一个数据库（部署手册第六节）。
 --
 -- 权限：两张表都开启行级安全（RLS），并且【不】给 anon / authenticated 等浏览器侧角色建任何策略
 --       → 用 Publishable Key 或用户 AccessToken 从浏览器调网关，读写都拿不到任何行。
